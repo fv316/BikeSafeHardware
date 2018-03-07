@@ -1,75 +1,33 @@
 #include <SoftwareSerial.h>
 #include <TinyGPS.h>
 #include <AltSoftSerial.h>
+#include <LowPower.h>
+#include <SPI.h>
+#include <ADXL362.h>
 
+// below is for IMU
+ADXL362 xl;
+int16_t interruptPin = 2;          //Setup ADXL362 interrupt output to Interrupt 0 (digital pin 2)
+int16_t interruptStatus = 0;
+int16_t XValue, YValue, ZValue, Temperature;
+
+int mode; // 1 = locked 2 = cycling 3 = panic
 
 // gps
 AltSoftSerial myGPS; // RX (GPS TP, DP 8 def), TX (GPS RX, DP 9 def)
 TinyGPS gps; // create gps object
-
 long lat, lon; // create variable for latitude and longitude object
 unsigned long DelayTime = 30000, ReadTime = 7000;
 String Arsp, Grsp;
 bool encoded;
 
-
 //sim
-
 //SIM800 TX is connected to Arduino D2
 #define SIM800_TX_PIN 2
-
 //SIM800 RX is connected to Arduino D3
 #define SIM800_RX_PIN 3
-
 //Create software serial object to communicate with SIM800
 SoftwareSerial SIM(SIM800_TX_PIN, SIM800_RX_PIN);
-
-
-
-void SendLoc(bool &encoded);
-void ReadMode();
-
-void setup() {
-  // Open serial communications and wait for port to open:
-  Serial.begin(57600);
-
-  //Being serial communication with Arduino and SIM800
-  SIM.begin(4800);
-  delay(500);
-  SIM.println("AT\n"); //checking
-  delay(1000);
-  //Set SMS format to ASCII
-  SIM.write("AT+CMGF=1\r\n");
-  delay(1000);
-  // gps
-  myGPS.begin(9600);
-  //Serial.println("Goodnight moon!");
-  Serial.println("Setup Complete!");
-  // set the data rate for the SoftwareSerial port
-
-}
-
-void loop() { // run over and over
-  encoded = false;
-  //myGPS.listen();
-  delay(1000);
-  if(millis()%DelayTime < 3000){
-    while (!encoded) {
-      SendLoc(encoded);
-
-    }
-    delay(1000);
-  } 
-  
-  
-  if(millis()% ReadTime < 3000){
-    ReadMode();
-    
-    delay(100);
-  }
-}
-
-
 
 void SendLoc(bool &encoded) {
   if (myGPS.available()) {
@@ -84,7 +42,7 @@ void SendLoc(bool &encoded) {
       Serial.print("lon: "); Serial.println(lon); // print longitude
       String Message = "c " + String(lat, DEC) + " " + String(lon, DEC);
       //Send new SMS command and message number
-      SIM.write("AT+CMGS=\"+447936663084\"\r\n");
+      SIM.write("AT+CMGS=\"+447541241808\"\r\n");
       delay(1000);
       SIM.write(Message.c_str());
       delay(1000);
@@ -97,6 +55,17 @@ void SendLoc(bool &encoded) {
       Serial.println();
     }
   }
+}
+
+void sendAlert() {
+  SIM.write("AT+CMGS=\"+447541241808\"\r\n");
+  delay(1000);
+  SIM.write("Alert".c_str());
+  delay(1000);
+
+  //Send Ctrl+Z / ESC to denote SMS message is complete
+  SIM.write((char)26);
+  Serial.println("SMS Sent!");
 }
 
 void ReadMode() {
@@ -116,20 +85,14 @@ void ReadMode() {
       delay(500);
       Serial.println( "All Messages Deleted" );
     }
-    if (strstr(Grsp.c_str(), "normal")) {
-      DelayTime = 120000;
-      ReadTime = 7000;
-      Serial.println(DelayTime);
+    if (strstr(Grsp.c_str(), "cycling")) {
+      mode = 2;
     }
     else if (strstr(Grsp.c_str(), "panic")) {
-      DelayTime = 10000;
-      ReadTime = 7000;
-      Serial.println(DelayTime);
+      mode = 3;
     }
-     else if (strstr(Grsp.c_str(), "secure")) {
-      DelayTime = 30000;
-      ReadTime = 7000;
-      Serial.println(DelayTime);
+     else if (strstr(Grsp.c_str(), "locked")) {
+      mode = 1;
     }
     delay(200);
     SIM.println();
@@ -137,3 +100,56 @@ void ReadMode() {
   }
 }
 
+
+void setup() {
+  // Open serial communications and wait for port to open:
+  Serial.begin(57600);
+
+  //setup IMU thresholds
+  xl.begin();
+  xl.setupDCActivityInterrupt(300, 10);   // 300 code activity threshold.  With default ODR = 100Hz, time threshold of 10 results in 0.1 second time threshold
+  xl.setupDCInactivityInterrupt(80, 200);   // 80 code inactivity threshold.  With default ODR = 100Hz, time threshold of 30 results in 2 second time threshold
+  xl.beginMeasure();                      // DO LAST! enable measurement mode
+  xl.checkAllControlRegs();
+  delay(100);
+
+  //Begin serial communication with Arduino and SIM800
+  SIM.begin(4800);
+  delay(500);
+  SIM.println("AT\n"); //checking
+  delay(1000);
+  //Set SMS format to ASCII
+  SIM.write("AT+CMGF=1\r\n");
+  delay(1000);
+  // gps
+  myGPS.begin(9600);
+  //Serial.println("Goodnight moon!");
+  Serial.println("Setup Complete!");
+  // set the data rate for the SoftwareSerial port
+
+}
+
+void loop() { // run over and over
+  encoded = false;
+  interruptStatus = digitalRead(interruptPin);
+  if(interruptStatus != 0) {
+    while (!encoded) {
+      SendLoc(encoded);
+    }
+    sendAlert();
+  }
+
+  //myGPS.listen();
+  delay(1000);
+  if((mode != 2) && (millis()%DelayTime < 3000)){
+    while (!encoded) {
+      SendLoc(encoded);
+    }
+    delay(1000);
+  }
+
+  if(millis()% ReadTime < 3000){
+    ReadMode();
+    delay(100);
+  }
+}
