@@ -11,7 +11,6 @@ int16_t interruptPin = 2;          //Setup ADXL362 interrupt output to Interrupt
 int16_t interruptStatus = 0;
 int16_t XValue, YValue, ZValue, Temperature;
 
-int mode; // 1 = locked 2 = cycling 3 = panic
 
 // gps
 AltSoftSerial myGPS; // RX (GPS TP, DP 8 def), TX (GPS RX, DP 9 def)
@@ -40,7 +39,7 @@ void SendLoc(bool &encoded) {
       Serial.print("Position: ");
       Serial.print("lat: "); Serial.print(lat); Serial.print(" "); // print latitude
       Serial.print("lon: "); Serial.println(lon); // print longitude
-      String Message = "c " + String(lat, DEC) + " " + String(lon, DEC);
+      String Message = String(lat, DEC) + " " + String(lon, DEC);
       //Send new SMS command and message number
       SIM.write("AT+CMGS=\"+447541241808\"\r\n");
       delay(1000);
@@ -57,23 +56,13 @@ void SendLoc(bool &encoded) {
   }
 }
 
-void sendAlert() {
-  SIM.write("AT+CMGS=\"+447541241808\"\r\n");
-  delay(1000);
-  SIM.write("Alert".c_str());
-  delay(1000);
-
-  //Send Ctrl+Z / ESC to denote SMS message is complete
-  SIM.write((char)26);
-  Serial.println("SMS Sent!");
-}
 
 void ReadMode() {
   SIM.listen();
 
   Serial.println("reading...");
   Serial.println(SIM.available());
-  SIM.write("AT+CNMI=2, 2, 0, 0, 0\n"); //Set to notification for new message, New message indication
+  SIM.write("AT+CNMI=1, 2, 0, 0, 0\n"); //Set to notification for new message, New message indication
   if (SIM.available()) {
     //Check if GSM Send any data
     delay(1000);
@@ -85,14 +74,20 @@ void ReadMode() {
       delay(500);
       Serial.println( "All Messages Deleted" );
     }
-    if (strstr(Grsp.c_str(), "cycling")) {
-      mode = 2;
+        if (strstr(Grsp.c_str(), "normal")) {
+      DelayTime = 120000;
+      ReadTime = 7000;
+      Serial.println(DelayTime);
     }
     else if (strstr(Grsp.c_str(), "panic")) {
-      mode = 3;
+      DelayTime = 10000;
+      ReadTime = 7000;
+      Serial.println(DelayTime);
     }
-     else if (strstr(Grsp.c_str(), "locked")) {
-      mode = 1;
+     else if (strstr(Grsp.c_str(), "secure")) {
+      DelayTime = 30000;
+      ReadTime = 7000;
+      Serial.println(DelayTime);
     }
     delay(200);
     SIM.println();
@@ -132,22 +127,14 @@ void setup() {
 void loop() { // run over and over
   encoded = false;
   interruptStatus = digitalRead(interruptPin);
-  if(interruptStatus != 0) {
+  if((interruptStatus != 0) || (millis()%DelayTime < 3000)) {
     while (!encoded) {
       SendLoc(encoded);
     }
     sendAlert();
   }
 
-  //myGPS.listen();
-  delay(1000);
-  if((mode != 2) && (millis()%DelayTime < 3000)){
-    while (!encoded) {
-      SendLoc(encoded);
-    }
-    delay(1000);
-  }
-
+  
   if(millis()% ReadTime < 3000){
     ReadMode();
     delay(100);
