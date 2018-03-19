@@ -75,18 +75,15 @@ void ReadMode() {
       Serial.println( "All Messages Deleted" );
     }
         if (strstr(Grsp.c_str(), "normal")) {
-      DelayTime = 120000;
-      ReadTime = 7000;
+      DelayTime = 300000;
       Serial.println(DelayTime);
     }
     else if (strstr(Grsp.c_str(), "panic")) {
-      DelayTime = 10000;
-      ReadTime = 7000;
+      DelayTime = 15000;
       Serial.println(DelayTime);
     }
      else if (strstr(Grsp.c_str(), "secure")) {
       DelayTime = 30000;
-      ReadTime = 7000;
       Serial.println(DelayTime);
     }
     delay(200);
@@ -127,7 +124,7 @@ void setup() {
 void loop() { // run over and over
   encoded = false;
   interruptStatus = digitalRead(interruptPin);
-  if((interruptStatus != 0) || (millis()%DelayTime < 3000)) {
+  if(((interruptStatus != 0) && DelayTime != 300000)|| (millis()%DelayTime < 3000)) {
     while (!encoded) {
       SendLoc(encoded);
     }
