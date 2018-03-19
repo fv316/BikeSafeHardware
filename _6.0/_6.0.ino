@@ -131,7 +131,6 @@ void loop() { // run over and over
     while (!encoded) {
       SendLoc(encoded);
     }
-    sendAlert();
   }
 
   
